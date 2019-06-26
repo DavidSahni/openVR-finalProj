@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <string>
 #include <cstdlib>
+#include <filesystem>
 
 #include <openvr.h>
 
@@ -41,6 +42,59 @@ void ThreadSleep( unsigned long nMilliseconds )
 #elif defined(POSIX)
 	usleep( nMilliseconds * 1000 );
 #endif
+}
+
+class Timer
+{
+
+
+private:
+	//The clock time when the timer started
+	float startTicks;
+	const int MS_IN_CYCLE = 10000;
+public:
+	//Clock time when the timer was stopped
+	int splitTicks;
+	bool paused;
+
+	//The various clock actions
+	void start( );
+	void stop( );
+	float getAnimCycle();
+	void resume();
+	void pause();
+};
+
+
+
+void Timer::start( ) {
+	//Get the current clock time
+	paused = false;
+	startTicks = SDL_GetTicks();
+}
+
+float Timer::getAnimCycle() {
+	if (!paused) {
+		this->stop();
+	}
+	int eTime = splitTicks % MS_IN_CYCLE;
+	return (float)eTime / (float)MS_IN_CYCLE;
+}
+
+void Timer::stop( ) {
+	//Set the stop time
+	splitTicks = SDL_GetTicks() - startTicks;
+}
+
+void Timer::pause() {
+	paused = true;
+}
+
+void Timer::resume() {
+	if (paused) {
+		startTicks = SDL_GetTicks() - splitTicks;
+		paused = false;
+	}
 }
 
 class CGLRenderModel
@@ -80,6 +134,8 @@ public:
 
 	void Shutdown();
 
+	void ScaleNoiseAmp(bool triggerHeld);
+
 	void RunMainLoop();
 	bool HandleInput();
 	void ProcessVREvent( const vr::VREvent_t & event );
@@ -87,7 +143,11 @@ public:
 
 	bool SetupTexturemaps();
 
+	bool LoadOBj(const char * path, std::vector<Vector3>& out_vertices, std::vector<Vector2>& out_uvs, std::vector<Vector3> out_normals);
+
 	void SetupScene();
+	void AddObjVertex(Vector3 vertex, Vector2 st, std::vector<float>& vertData, Matrix4 mat);
+	void AddObjToScene(const char * path, std::vector<float>& vertData, Matrix4 mat);
 	void AddCubeToScene( Matrix4 mat, std::vector<float> &vertdata );
 	void AddCubeVertex( float fl0, float fl1, float fl2, float fl3, float fl4, std::vector<float> &vertdata );
 
@@ -109,6 +169,8 @@ public:
 	Matrix4 ConvertSteamVRMatrixToMatrix4( const vr::HmdMatrix34_t &matPose );
 
 	GLuint CompileGLShader( const char *pchShaderName, const char *pchVertexShader, const char *pchFragmentShader );
+	GLuint CompileGLShaderWithGeom(const char * pchShaderName, const char * pchVertexShader, const char * pchFragmentShader, const char * pchGeomShader);
+	char * LoadShaderFile(const char * filename);
 	bool CreateAllShaders();
 
 	CGLRenderModel *FindOrLoadRenderModel( const char *pchRenderModelName );
@@ -174,6 +236,8 @@ private: // OpenGL bookkeeping
 	float m_fFarClip;
 
 	GLuint m_iTexture;
+	GLuint m_iNoiseTex;
+
 
 	unsigned int m_uiVertcount;
 
@@ -196,6 +260,8 @@ private: // OpenGL bookkeeping
 	Matrix4 m_mat4ProjectionLeft;
 	Matrix4 m_mat4ProjectionRight;
 
+
+
 	struct VertexDataScene
 	{
 		Vector3 position;
@@ -217,6 +283,15 @@ private: // OpenGL bookkeeping
 
 	GLint m_nSceneMatrixLocation;
 	GLint m_nControllerMatrixLocation;
+	GLint dispTexLoc;
+	GLint m_uNoiseTex;
+	GLint m_uShowNoise;
+	GLint m_uTime;
+	bool uShowNoise;
+	float uTime;
+
+	Timer timer;
+
 	GLint m_nRenderModelMatrixLocation;
 
 	struct FramebufferDesc
@@ -509,6 +584,7 @@ bool CMainApplication::BInit()
  	m_iSceneVolumeWidth = m_iSceneVolumeInit;
  	m_iSceneVolumeHeight = m_iSceneVolumeInit;
  	m_iSceneVolumeDepth = m_iSceneVolumeInit;
+	uShowNoise = true;
  		
  	m_fScale = 0.3f;
  	m_fScaleSpacing = 4.0f;
@@ -519,8 +595,7 @@ bool CMainApplication::BInit()
  	m_iTexture = 0;
  	m_uiVertcount = 0;
  
-// 		m_MillisecondsTimer.start(1, this);
-// 		m_SecondsTimer.start(1000, this);
+	timer.start();
 	
 	if (!BInitGL())
 	{
@@ -690,6 +765,17 @@ void CMainApplication::Shutdown()
 	SDL_Quit();
 }
 
+
+void CMainApplication::ScaleNoiseAmp(bool triggerHeld) {
+	if (triggerHeld) {
+		timer.pause();
+	}
+	else {
+		timer.resume();
+	}
+}
+
+
 //-----------------------------------------------------------------------------
 // Purpose:
 //-----------------------------------------------------------------------------
@@ -717,7 +803,6 @@ bool CMainApplication::HandleInput()
 			}
 		}
 	}
-
 	// Process SteamVR events
 	vr::VREvent_t event;
 	while( m_pHMD->PollNextEvent( &event, sizeof( event ) ) )
@@ -732,7 +817,8 @@ bool CMainApplication::HandleInput()
 	actionSet.ulActionSet = m_actionsetDemo;
 	vr::VRInput()->UpdateActionState( &actionSet, sizeof(actionSet), 1 );
 
-	m_bShowCubes = !GetDigitalActionState( m_actionHideCubes );
+	m_bShowCubes = true;
+	ScaleNoiseAmp(GetDigitalActionState( m_actionHideCubes ));
 
 	vr::VRInputValueHandle_t ulHapticDevice;
 	if ( GetDigitalActionRisingEdge( m_actionTriggerHaptic, &ulHapticDevice ) )
@@ -795,6 +881,7 @@ bool CMainApplication::HandleInput()
 			}
 		}
 	}
+	uTime = timer.getAnimCycle();
 
 	return bRet;
 }
@@ -900,6 +987,7 @@ void CMainApplication::RenderFrame()
 	UpdateHMDMatrixPose();
 }
 
+ 
 
 //-----------------------------------------------------------------------------
 // Purpose: Compiles a GL shader program and returns the handle. Returns 0 if
@@ -960,12 +1048,149 @@ GLuint CMainApplication::CompileGLShader( const char *pchShaderName, const char 
 }
 
 
+GLuint CMainApplication::CompileGLShaderWithGeom(const char *pchShaderName, const char *pchVertexShader, const char *pchFragmentShader, const char *pchGeomShader)
+{
+	GLuint unProgramID = glCreateProgram();
+
+	GLuint nSceneVertexShader = glCreateShader(GL_VERTEX_SHADER);
+	glShaderSource(nSceneVertexShader, 1, &pchVertexShader, NULL);
+	glCompileShader(nSceneVertexShader);
+
+	GLint vShaderCompiled = GL_FALSE;
+	glGetShaderiv(nSceneVertexShader, GL_COMPILE_STATUS, &vShaderCompiled);
+	if (vShaderCompiled != GL_TRUE)
+	{
+		dprintf("%s - Unable to compile vertex shader %d!\n", pchShaderName, nSceneVertexShader);
+		glDeleteProgram(unProgramID);
+		glDeleteShader(nSceneVertexShader);
+		return 0;
+	}
+	glAttachShader(unProgramID, nSceneVertexShader);
+	glDeleteShader(nSceneVertexShader); // the program hangs onto this once it's attached
+
+	GLuint  nSceneFragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+	glShaderSource(nSceneFragmentShader, 1, &pchFragmentShader, NULL);
+	glCompileShader(nSceneFragmentShader);
+
+	GLint fShaderCompiled = GL_FALSE;
+	glGetShaderiv(nSceneFragmentShader, GL_COMPILE_STATUS, &fShaderCompiled);
+	if (fShaderCompiled != GL_TRUE)
+	{
+		dprintf("%s", pchFragmentShader);
+		dprintf("%s - Unable to compile fragment shader %d!\n", pchShaderName, nSceneFragmentShader);
+		glDeleteProgram(unProgramID);
+		glDeleteShader(nSceneFragmentShader);
+		return 0;
+	}
+
+	glAttachShader(unProgramID, nSceneFragmentShader);
+	glDeleteShader(nSceneFragmentShader); // the program hangs onto this once it's attached
+
+	GLuint  nSceneGeomShader = glCreateShader(GL_GEOMETRY_SHADER);
+	glShaderSource(nSceneGeomShader, 1, &pchGeomShader, NULL);
+	glCompileShader(nSceneGeomShader);
+
+	GLint gShaderCompiled = GL_FALSE;
+	glGetShaderiv(nSceneGeomShader, GL_COMPILE_STATUS, &gShaderCompiled);
+	if (gShaderCompiled != GL_TRUE)
+	{
+		int logLength;
+		glGetShaderiv(nSceneGeomShader, GL_INFO_LOG_LENGTH, &logLength);
+		GLchar* log = new GLchar[logLength];
+		glGetShaderInfoLog(nSceneGeomShader, logLength, NULL, log);
+		dprintf("%s\n", log);
+		dprintf("%s - Unable to compile GEOM shader %d!\n", pchShaderName, nSceneGeomShader);
+		glDeleteProgram(unProgramID);
+		glDeleteShader(nSceneGeomShader);
+		return 0;
+	}
+
+	glAttachShader(unProgramID, nSceneGeomShader);
+	glDeleteShader(nSceneGeomShader); // the program hangs onto this once it's attached
+
+	glLinkProgram(unProgramID);
+
+	GLint programSuccess = GL_TRUE;
+	glGetProgramiv(unProgramID, GL_LINK_STATUS, &programSuccess);
+	if (programSuccess != GL_TRUE)
+	{
+		int logLength;
+		glGetProgramiv(unProgramID, GL_INFO_LOG_LENGTH, &logLength);
+		GLchar* log = new GLchar[logLength];
+		glGetProgramInfoLog(unProgramID, logLength, NULL, log);
+		dprintf("%s\n", log);
+		dprintf("%s - Error linking program %d!\n", pchShaderName, unProgramID);
+		glDeleteProgram(unProgramID);
+		return 0;
+	}
+
+	glUseProgram(unProgramID);
+	glUseProgram(0);
+
+	return unProgramID;
+}
+
+char* CMainApplication::LoadShaderFile(const char* filename) {
+	std::FILE * file = std::fopen(filename, "r");
+
+	fseek(file, 0, SEEK_END); 
+	int numBytes = ftell(file);     
+	// length of file
+	GLchar * buffer = new GLchar [numBytes+1];
+	memset(buffer, '\0', numBytes + 1);
+	rewind( file );// same as:  “fseek( in, 0, SEEK_SET )”
+	fread( buffer, 1, numBytes, file );
+	fclose( file );
+	buffer[numBytes] = '\0';     // the entire file is now in a byte string
+
+	return buffer;
+}
+
 //-----------------------------------------------------------------------------
 // Purpose: Creates all the shaders used by HelloVR SDL
 //-----------------------------------------------------------------------------
 bool CMainApplication::CreateAllShaders()
 {
-	m_unSceneProgramID = CompileGLShader( 
+	//m_unSceneProgramID = CompileGLShader(
+	//	"Scene",
+
+	//	// Vertex Shader
+	//	"#version 410\n"
+	//	"uniform mat4 matrix;\n"
+	//	"layout(location = 0) in vec4 position;\n"
+	//	"layout(location = 1) in vec2 v2UVcoordsIn;\n"
+	//	"layout(location = 2) in vec3 v3NormalIn;\n"
+	//	"out vec2 v2UVcoords;\n"
+	//	"out vec3 vPos;\n"
+	//	"void main()\n"
+	//	"{\n"
+	//	"	v2UVcoords = v2UVcoordsIn;\n"
+	//	"	vPos = position.xyz;\n"
+	//	"	gl_Position = matrix * position;\n"
+	//	"}\n",
+
+	//	// Fragment Shader
+	//	"#version 410 core\n"
+	//	"uniform sampler2D blockm;\n"
+	//	"uniform sampler3D Noise2;\n"
+	//	"uniform int uShowNoise;\n"
+	//	"uniform float uTimer;\n"
+	//	"in vec2 v2UVcoords;\n"
+	//	"in vec3 vPos;\n"
+	//	"out vec4 outputColor;\n"
+	//	"void main()\n"
+	//	"{\n"
+	//	"	vec4 nv = texture(Noise2, vPos);\n"
+	//	"	float sum = nv.r + nv.g + nv.b + nv.a;\n"
+	//	"	sum = (sum-2)/2.;\n"
+	//	"	vec2 dNoise = vec2(sum, nv.r);\n"
+	//	"	dNoise = mix(vec2(0,0), dNoise, uTimer);\n"
+	//	"	vec2 st = v2UVcoords + (uShowNoise * dNoise);\n"
+	//	"   outputColor = texture(blockm, st);\n"
+	//	"}\n"
+	//	);
+
+	m_unSceneProgramID = CompileGLShaderWithGeom(
 		"Scene",
 
 		// Vertex Shader
@@ -978,20 +1203,16 @@ bool CMainApplication::CreateAllShaders()
 		"void main()\n"
 		"{\n"
 		"	v2UVcoords = v2UVcoordsIn;\n"
-		"	gl_Position = matrix * position;\n"
-		"}\n",
+		"	gl_Position = position;\n"
+		"}\n", LoadShaderFile("./evapVR.frag"), LoadShaderFile("./evapVR.geom"));
 
-		// Fragment Shader
-		"#version 410 core\n"
-		"uniform sampler2D mytexture;\n"
-		"in vec2 v2UVcoords;\n"
-		"out vec4 outputColor;\n"
-		"void main()\n"
-		"{\n"
-		"   outputColor = texture(mytexture, v2UVcoords);\n"
-		"}\n"
-		);
+
 	m_nSceneMatrixLocation = glGetUniformLocation( m_unSceneProgramID, "matrix" );
+	dispTexLoc = glGetUniformLocation(m_unSceneProgramID, "blockm");
+	m_uNoiseTex = glGetUniformLocation(m_unSceneProgramID, "Noise2");
+	m_uShowNoise = glGetUniformLocation(m_unSceneProgramID, "uShowNoise");
+	m_uTime = glGetUniformLocation(m_unSceneProgramID, "uTimer");
+
 	if( m_nSceneMatrixLocation == -1 )
 	{
 		dprintf( "Unable to find matrix uniform in scene shader\n" );
@@ -1023,6 +1244,7 @@ bool CMainApplication::CreateAllShaders()
 		"}\n"
 		);
 	m_nControllerMatrixLocation = glGetUniformLocation( m_unControllerTransformProgramID, "matrix" );
+
 	if( m_nControllerMatrixLocation == -1 )
 	{
 		dprintf( "Unable to find matrix uniform in controller shader\n" );
@@ -1057,6 +1279,7 @@ bool CMainApplication::CreateAllShaders()
 
 		);
 	m_nRenderModelMatrixLocation = glGetUniformLocation( m_unRenderModelProgramID, "matrix" );
+
 	if( m_nRenderModelMatrixLocation == -1 )
 	{
 		dprintf( "Unable to find matrix uniform in render model shader\n" );
@@ -1101,8 +1324,9 @@ bool CMainApplication::CreateAllShaders()
 bool CMainApplication::SetupTexturemaps()
 {
 	std::string sExecutableDirectory = Path_StripFilename( Path_GetExecutablePath() );
-	std::string strFullPath = Path_MakeAbsolute( "../cube_texture.png", sExecutableDirectory );
-	
+	std::string strFullPath = Path_MakeAbsolute( "../blockM.png", sExecutableDirectory );
+	//std::string strFullPath = Path_MakeAbsolute( "../cube_texture.png", sExecutableDirectory );
+
 	std::vector<unsigned char> imageRGBA;
 	unsigned nImageWidth, nImageHeight;
 	unsigned nError = lodepng::decode( imageRGBA, nImageWidth, nImageHeight, strFullPath.c_str() );
@@ -1126,11 +1350,46 @@ bool CMainApplication::SetupTexturemaps()
 	GLfloat fLargest;
 	glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &fLargest);
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, fLargest);
-	 	
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+
+	strFullPath = Path_MakeAbsolute("../noise3d.064.tex", sExecutableDirectory);
+	//read in the tex file
+	std::FILE * file = std::fopen(strFullPath.c_str(), "r");
+	std::vector<unsigned char> noiseTex;
+
+	unsigned fileSize = std::filesystem::file_size(std::filesystem::path(strFullPath));
+	dprintf("FileSize: %u\n", fileSize);
+	noiseTex.resize(fileSize);
+	std::size_t res = std::fread(&noiseTex[0], sizeof(noiseTex[0]), fileSize, file);
+	if (res > 0) {
+		dprintf("Filesize: %u  Read: %i\n", fileSize, res);
+	}
+	else {
+		dprintf("Error read 0\n");
+	}
+	std::fclose(file);
+	//WE HAVE THE CHAR ARRAY HOLY MOTHER OF POG NOW JUST LOAD THAT BAD BOY IN and its 2d yeet
+	glEnable(GL_TEXTURE_3D);
+	glGenTextures(1, &m_iNoiseTex);
+	glBindTexture(GL_TEXTURE_3D, m_iNoiseTex);
+
+	glTexImage3D(GL_TEXTURE_3D, 0, GL_RGBA, 64, 64,64,
+		0, GL_RGBA, GL_UNSIGNED_BYTE, &noiseTex[0]);
+	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glBindTexture(GL_TEXTURE_3D, 0);
 	glBindTexture( GL_TEXTURE_2D, 0 );
 
 	return ( m_iTexture != 0 );
 }
+
+
+
+
 
 
 //-----------------------------------------------------------------------------
@@ -1146,26 +1405,56 @@ void CMainApplication::SetupScene()
 	Matrix4 matScale;
 	matScale.scale( m_fScale, m_fScale, m_fScale );
 	Matrix4 matTransform;
-	matTransform.translate(
+	matTransform.translate(0, m_fScaleSpacing, -m_fScaleSpacing/2.f);
+	/*matTransform.translate(
 		-( (float)m_iSceneVolumeWidth * m_fScaleSpacing ) / 2.f,
 		-( (float)m_iSceneVolumeHeight * m_fScaleSpacing ) / 2.f,
 		-( (float)m_iSceneVolumeDepth * m_fScaleSpacing ) / 2.f);
-	
+	*/
 	Matrix4 mat = matScale * matTransform;
+	
+	//AddCubeToScene(mat, vertdataarray);
 
-	for( int z = 0; z< m_iSceneVolumeDepth; z++ )
-	{
-		for( int y = 0; y< m_iSceneVolumeHeight; y++ )
-		{
-			for( int x = 0; x< m_iSceneVolumeWidth; x++ )
-			{
-				AddCubeToScene( mat, vertdataarray );
-				mat = mat * Matrix4().translate( m_fScaleSpacing, 0, 0 );
-			}
-			mat = mat * Matrix4().translate( -((float)m_iSceneVolumeWidth) * m_fScaleSpacing, m_fScaleSpacing, 0 );
-		}
-		mat = mat * Matrix4().translate( 0, -((float)m_iSceneVolumeHeight) * m_fScaleSpacing, m_fScaleSpacing );
+	AddObjToScene("./pigY.obj", vertdataarray, mat);
+	mat = matScale * Matrix4().translate(0, 0, 0);
+/*
+
+	for(int z = 0; z < m_iSceneVolumeDepth; z++) {
+		AddCubeToScene(mat, vertdataarray);
+		mat = mat * Matrix4().translate(0, 0, m_fScaleSpacing);
 	}
+
+	mat = matScale * Matrix4().translate(0, 0, 0);
+	for(int x = 0; x < m_iSceneVolumeWidth; x++) {
+		AddCubeToScene(mat, vertdataarray);
+		mat = mat * Matrix4().translate(m_fScaleSpacing, 0, 0);
+	}
+
+	mat = matScale * Matrix4().translate(0, 0, 0);
+	for(int y = 0; y < m_iSceneVolumeHeight; y++) {
+		AddCubeToScene(mat, vertdataarray);
+		mat = mat * Matrix4().translate(0, m_fScaleSpacing, 0);
+	}*/
+
+	//for( int z = 0; z< m_iSceneVolumeDepth; z++ )
+	//{
+	//	for( int y = 0; y< m_iSceneVolumeHeight; y++ )
+	//	{
+	//		for( int x = 0; x< m_iSceneVolumeWidth; x++ )
+	//		{
+	//			if (x == 0 || y == 0 || z == 0) {
+	//				AddCubeToScene(mat, vertdataarray);
+	//				dprintf("added cube\n");
+	//			}
+	//				mat = mat * Matrix4().translate( m_fScaleSpacing, 0, 0 );
+	//		}
+	//		mat = mat * Matrix4().translate( -((float)m_iSceneVolumeWidth) * m_fScaleSpacing, m_fScaleSpacing, 0 );
+	//	}
+	//	mat = mat * Matrix4().translate( 0, -((float)m_iSceneVolumeHeight) * m_fScaleSpacing, m_fScaleSpacing );
+	//}
+
+	//AddCubeToScene(mat, vertdataarray); // replace this with any of my own geometry (gotta modify vertarray too (glm/vertex buffer stuff)
+
 	m_uiVertcount = vertdataarray.size()/5;
 	
 	glGenVertexArrays( 1, &m_unSceneVAO );
@@ -1190,6 +1479,93 @@ void CMainApplication::SetupScene()
 	glDisableVertexAttribArray(1);
 
 }
+
+
+void CMainApplication::AddObjVertex(Vector3 vertex, Vector2 st, std::vector<float> &vertData, Matrix4 mat) {
+	Vector4 vtx = mat * Vector4(vertex.x, vertex.y, vertex.z, 1);
+	vertData.push_back(vtx.x);
+	vertData.push_back(vtx.y);
+	vertData.push_back(vtx.z);
+	vertData.push_back(st.x);
+	vertData.push_back(st.y);
+}
+
+void CMainApplication::AddObjToScene(const char* path, std::vector<float> &vertData, Matrix4 mat) {
+	std::vector<Vector3> vtx;
+	std::vector<Vector2> st;
+	std::vector<Vector3> normals;
+
+	bool succ = LoadOBj(path, vtx, st, normals);
+	int len = vtx.size();
+	for (int i = 0; i < len; i++) {
+		AddObjVertex(vtx[i], st[i], vertData, mat);
+	}
+}
+
+bool CMainApplication::LoadOBj(const char* path, std::vector <Vector3> &out_vertices, std::vector<Vector2> &out_uvs, std::vector<Vector3> out_normals) {
+	std::vector< unsigned int > vertexIndices, uvIndices, normalIndices;
+	std::vector< Vector3 > temp_vertices;
+	std::vector< Vector2 > temp_uvs;
+	std::vector< Vector3 > temp_normals;
+
+	std::FILE * file = std::fopen(path, "r");
+	while (1) {
+
+		char lineHeader[128];
+		// read the first word of the line
+		int res = fscanf(file, "%s", lineHeader);
+		if (res == EOF)
+			break; // EOF = End Of File. Quit the loop.
+
+		else {
+			if (strcmp(lineHeader, "v") == 0) {
+				Vector3 vertex;
+				fscanf(file, "%f %f %f\n", &vertex.x, &vertex.y, &vertex.z);
+				temp_vertices.push_back(vertex);
+			}
+			else if (strcmp(lineHeader, "vt") == 0) {
+				Vector2 uv;
+				fscanf(file, "%f %f\n", &uv.x, &uv.y);
+				temp_uvs.push_back(uv);
+			}
+			else if (strcmp(lineHeader, "vn") == 0) {
+				Vector3 normal;
+				fscanf(file, "%f %f %f\n", &normal.x, &normal.y, &normal.z);
+				temp_normals.push_back(normal);
+			}
+			else if (strcmp(lineHeader, "f") == 0) {
+				std::string vertex1, vertex2, vertex3;
+				unsigned int vertexIndex[3], uvIndex[3], normalIndex[3];
+				int matches = fscanf(file, "%d/%d/%d %d/%d/%d %d/%d/%d\n", &vertexIndex[0], &uvIndex[0], &normalIndex[0], &vertexIndex[1], &uvIndex[1], &normalIndex[1], &vertexIndex[2], &uvIndex[2], &normalIndex[2]);
+				if (matches != 9) {
+					dprintf("File can't be read by our simple parser : ( Try exporting with other options\n");
+					return false;
+				}
+				vertexIndices.push_back(vertexIndex[0]);
+				vertexIndices.push_back(vertexIndex[1]);
+				vertexIndices.push_back(vertexIndex[2]);
+				uvIndices.push_back(uvIndex[0]);
+				uvIndices.push_back(uvIndex[1]);
+				uvIndices.push_back(uvIndex[2]);
+				normalIndices.push_back(normalIndex[0]);
+				normalIndices.push_back(normalIndex[1]);
+				normalIndices.push_back(normalIndex[2]);
+			}
+		}
+	}
+	for (int i = 0; i < vertexIndices.size(); i++) {
+		int vertexIndex = vertexIndices[i];
+		Vector3 vertex = temp_vertices[vertexIndex - 1];
+		Vector2 st = temp_uvs[vertexIndex - 1];
+		Vector3 normal = temp_normals[vertexIndex - 1];
+		out_vertices.push_back(vertex);
+		out_normals.push_back(normal);
+		out_uvs.push_back(st);
+
+	}
+	return true;
+}
+
 
 
 //-----------------------------------------------------------------------------
@@ -1498,6 +1874,7 @@ void CMainApplication::RenderStereoTargets()
  	glBindFramebuffer( GL_FRAMEBUFFER, 0 );
 	
 	glDisable( GL_MULTISAMPLE );
+
 	 	
  	glBindFramebuffer(GL_READ_FRAMEBUFFER, leftEyeDesc.m_nRenderFramebufferId);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, leftEyeDesc.m_nResolveFramebufferId );
@@ -1542,11 +1919,21 @@ void CMainApplication::RenderScene( vr::Hmd_Eye nEye )
 	if( m_bShowCubes )
 	{
 		glUseProgram( m_unSceneProgramID );
+		glActiveTexture(GL_TEXTURE0 + 0);
+		glBindTexture(GL_TEXTURE_2D, m_iTexture);
+		glActiveTexture(GL_TEXTURE0 + 2);
+		glBindTexture(GL_TEXTURE_3D, m_iNoiseTex);
+		glUniform1i(dispTexLoc, 0);
+		glUniform1i(m_uNoiseTex, 2);
+		glUniform1i(m_uShowNoise, 1);
+		glUniform1f(m_uTime, uTime);
 		glUniformMatrix4fv( m_nSceneMatrixLocation, 1, GL_FALSE, GetCurrentViewProjectionMatrix( nEye ).get() );
 		glBindVertexArray( m_unSceneVAO );
-		glBindTexture( GL_TEXTURE_2D, m_iTexture );
+		
+
 		glDrawArrays( GL_TRIANGLES, 0, m_uiVertcount );
 		glBindVertexArray( 0 );
+		glActiveTexture(GL_TEXTURE0);
 	}
 
 	bool bIsInputAvailable = m_pHMD->IsInputAvailable();
@@ -1590,7 +1977,6 @@ void CMainApplication::RenderCompanionWindow()
 
 	glBindVertexArray( m_unCompanionWindowVAO );
 	glUseProgram( m_unCompanionWindowProgramID );
-
 	// render left eye (first half of index array )
 	glBindTexture(GL_TEXTURE_2D, leftEyeDesc.m_nResolveTextureId );
 	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );

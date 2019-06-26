@@ -1,0 +1,23 @@
+﻿  hellovr_opengl_main.cpp
+c:\users\david pc\osucs\fun\openvr\samples\hellovr_opengl\hellovr_opengl_main.cpp(73): warning C4244: '=': conversion from 'Uint32' to 'float', possible loss of data
+c:\users\david pc\osucs\fun\openvr\samples\hellovr_opengl\hellovr_opengl_main.cpp(86): warning C4244: '=': conversion from 'float' to 'int', possible loss of data
+c:\users\david pc\osucs\fun\openvr\samples\hellovr_opengl\hellovr_opengl_main.cpp(95): warning C4244: '=': conversion from 'Uint32' to 'float', possible loss of data
+c:\users\david pc\osucs\fun\openvr\samples\hellovr_opengl\hellovr_opengl_main.cpp(1134): warning C4996: 'fopen': This function or variable may be unsafe. Consider using fopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+  c:\program files (x86)\windows kits\10\include\10.0.17763.0\ucrt\stdio.h(208): note: see declaration of 'fopen'
+c:\users\david pc\osucs\fun\openvr\samples\hellovr_opengl\hellovr_opengl_main.cpp(1361): warning C4244: 'initializing': conversion from 'uintmax_t' to 'unsigned int', possible loss of data
+c:\users\david pc\osucs\fun\openvr\samples\hellovr_opengl\hellovr_opengl_main.cpp(1358): warning C4996: 'fopen': This function or variable may be unsafe. Consider using fopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+  c:\program files (x86)\windows kits\10\include\10.0.17763.0\ucrt\stdio.h(208): note: see declaration of 'fopen'
+c:\users\david pc\osucs\fun\openvr\samples\hellovr_opengl\hellovr_opengl_main.cpp(1556): warning C4018: '<': signed/unsigned mismatch
+c:\users\david pc\osucs\fun\openvr\samples\hellovr_opengl\hellovr_opengl_main.cpp(1511): warning C4996: 'fopen': This function or variable may be unsafe. Consider using fopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+  c:\program files (x86)\windows kits\10\include\10.0.17763.0\ucrt\stdio.h(208): note: see declaration of 'fopen'
+c:\users\david pc\osucs\fun\openvr\samples\hellovr_opengl\hellovr_opengl_main.cpp(1516): warning C4996: 'fscanf': This function or variable may be unsafe. Consider using fscanf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+  c:\program files (x86)\windows kits\10\include\10.0.17763.0\ucrt\stdio.h(1197): note: see declaration of 'fscanf'
+c:\users\david pc\osucs\fun\openvr\samples\hellovr_opengl\hellovr_opengl_main.cpp(1523): warning C4996: 'fscanf': This function or variable may be unsafe. Consider using fscanf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+  c:\program files (x86)\windows kits\10\include\10.0.17763.0\ucrt\stdio.h(1197): note: see declaration of 'fscanf'
+c:\users\david pc\osucs\fun\openvr\samples\hellovr_opengl\hellovr_opengl_main.cpp(1528): warning C4996: 'fscanf': This function or variable may be unsafe. Consider using fscanf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+  c:\program files (x86)\windows kits\10\include\10.0.17763.0\ucrt\stdio.h(1197): note: see declaration of 'fscanf'
+c:\users\david pc\osucs\fun\openvr\samples\hellovr_opengl\hellovr_opengl_main.cpp(1533): warning C4996: 'fscanf': This function or variable may be unsafe. Consider using fscanf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+  c:\program files (x86)\windows kits\10\include\10.0.17763.0\ucrt\stdio.h(1197): note: see declaration of 'fscanf'
+c:\users\david pc\osucs\fun\openvr\samples\hellovr_opengl\hellovr_opengl_main.cpp(1539): warning C4996: 'fscanf': This function or variable may be unsafe. Consider using fscanf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+  c:\program files (x86)\windows kits\10\include\10.0.17763.0\ucrt\stdio.h(1197): note: see declaration of 'fscanf'
+  hellovr_opengl.vcxproj -> C:\Users\David Pc\osuCS\Fun\openvr\samples\hellovr_opengl\..\bin\win32\hellovr_opengl.exe
